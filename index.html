@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>War Zone Standings</title>
+    <style>
+        :root {
+            --primary: #1e3a8a;
+            --secondary: #0284c7;
+            --accent: #f59e0b;
+            --bg: #f8fafc;
+            --text: #0f172a;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 30px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .sports-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .sport-card {
+            background: white;
+            padding: 15px;
+            text-align: center;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+            font-weight: bold;
+        }
+
+        .sport-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+        }
+
+        .sport-card.active {
+            border-color: var(--accent);
+            background-color: #fef3c7;
+            color: #b45309;
+        }
+
+        .standings-section {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            min-height: 400px;
+        }
+
+        .group-container { margin-bottom: 40px; }
+
+        .group-title {
+            color: var(--primary);
+            border-right: 4px solid var(--accent);
+            padding-right: 10px;
+            margin-bottom: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: center;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th { background-color: var(--primary); color: white; font-weight: 600; }
+
+        tr:nth-child(even) { background-color: #f8fafc; }
+
+        tr:hover { background-color: #f1f5f9; }
+
+        .rank { font-weight: bold; width: 60px; color: #64748b; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🏆 War Zone Standings</h1>
+    </header>
+
+    <div class="sports-container">
+        <div class="sport-card active" onclick="loadStandings('Football', this)">Football ⚽</div>
+        <div class="sport-card" onclick="loadStandings('Dodgeball', this)">Dodgeball 🎯</div>
+        <div class="sport-card" onclick="loadStandings('Volleyball', this)">Volleyball 🏐</div>
+        <div class="sport-card" onclick="loadStandings('Ultimate Ball', this)">Ultimate Ball 🥏</div>
+    </div>
+
+    <div class="standings-section">
+        <h2 id="current-sport-title" style="text-align: left;">جدول ترتيب: Football</h2>
+        <div id="groups-container"></div>
+    </div>
+
+    <script>
+        async function loadStandings(sportName, element) {
+            // تحديث الأزرار
+            document.querySelectorAll('.sport-card').forEach(card => card.classList.remove('active'));
+            if(element) element.classList.add('active');
+            
+            document.getElementById('current-sport-title').innerText = "جدول ترتيب: " + sportName;
+            const container = document.getElementById('groups-container');
+
+            try {
+                const response = await fetch(`http://127.0.0.1:8000/standings/${sportName}`);
+                const groups = await response.json();
+                
+                container.innerHTML = "";
+
+                if (Object.keys(groups).length === 0) {
+                    container.innerHTML = "<p style='text-align:center; padding:20px;'>جاري مزامنة البيانات من Google Sheets... انتظر لحظة واعمل ريفريش.</p>";
+                    return;
+                }
+
+                for (const groupName in groups) {
+                    let groupHtml = `
+                        <div class="group-container">
+                            <h3 class="group-title">المجموعة ${groupName}</h3>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th class="rank">المركز</th>
+                                        <th>الفريق</th>
+                                        <th>لعب</th>
+                                        <th>فوز</th>
+                                        <th>تعادل</th>
+                                        <th>خسارة</th>
+                                        <th>النقاط</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                    `;
+
+                    groups[groupName].forEach((team, index) => {
+                        // حل سحري: استخراج القيم بالترتيب في حال وجود مسافات بالأسماء
+                        const v = Object.values(team);
+                        
+                        // الترتيب المتوقع في الشيت: [المجموعة, الفريق, لعب, فوز, تعادل, خسارة, نقاط]
+                        const teamName = team["الفريق"] || team["الفريق "] || v[1] || "غير معروف";
+                        const played = team["لعب"] || team["لعب "] || v[2] || 0;
+                        const won = team["فوز"] || team["فوز "] || v[3] || 0;
+                        const drawn = team["تعادل"] || team["تعادل "] || v[4] || 0;
+                        const lost = team["خسارة"] || team["خسارة "] || v[5] || 0;
+                        const points = team["نقاط"] || team["النقاط"] || team["نقاط "] || v[6] || 0;
+
+                        groupHtml += `
+                            <tr>
+                                <td class="rank">${index + 1}</td>
+                                <td style="text-align:right; padding-right:30px;"><strong>${teamName}</strong></td>
+                                <td>${played}</td>
+                                <td>${won}</td>
+                                <td>${drawn}</td>
+                                <td>${lost}</td>
+                                <td style="color: var(--secondary); font-weight:bold; font-size:1.1rem;">${points}</td>
+                            </tr>
+                        `;
+                    });
+
+                    groupHtml += `</tbody></table></div>`;
+                    container.innerHTML += groupHtml;
+                }
+            } catch (error) {
+                container.innerHTML = "<p style='color:red; text-align:center;'>خطأ في الاتصال بالسيرفر. تأكد من تشغيل ملف البايثون.</p>";
+            }
+        }
+
+        // تحديث تلقائي كل 30 ثانية
+        setInterval(() => {
+            const activeCard = document.querySelector('.sport-card.active');
+            const sport = activeCard.innerText.split(' ')[0];
+            loadStandings(sport, activeCard);
+        }, 30000);
+
+        window.onload = () => loadStandings('Football', document.querySelector('.sport-card'));
+    </script>
+</body>
+</html>
