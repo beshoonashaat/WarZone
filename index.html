@@ -271,83 +271,94 @@
 
     <script>
         async function loadStandings(sportName, element) {
-            // تحديث الأزرار
-            document.querySelectorAll('.sport-card').forEach(card => card.classList.remove('active'));
-            if(element) element.classList.add('active');
-            
-            document.getElementById('current-sport-title').innerText = "جدول ترتيب: " + sportName;
-            const container = document.getElementById('groups-container');
+    // تحديث الأزرار (Active State)
+    document.querySelectorAll('.sport-card').forEach(card => card.classList.remove('active'));
+    if(element) element.classList.add('active');
+    
+    document.getElementById('current-sport-title').innerText = "جدول ترتيب: " + sportName;
+    const container = document.getElementById('groups-container');
 
-            try {
-                const response = await fetch(`/standings/${sportName}`);
-                const groups = await response.json();
-                
-                container.innerHTML = "";
+    // منع مسح الشاشة إذا كانت البيانات موجودة بالفعل
+    if (container.innerHTML.trim() === "") {
+        container.innerHTML = "<p style='text-align:center; padding:20px;'>جاري تحميل الترتيب...</p>";
+    }
 
-                if (Object.keys(groups).length === 0) {
-                    container.innerHTML = "<p style='text-align:center; padding:20px;'>جاري مزامنة البيانات من Google Sheets... انتظر لحظة واعمل ريفريش.</p>";
-                    return;
-                }
-
-                for (const groupName in groups) {
-                    let groupHtml = `
-                        <div class="group-container">
-                            <h3 class="group-title">المجموعة ${groupName}</h3>
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th class="rank">المركز</th>
-                                        <th>الفريق</th>
-                                        <th>لعب</th>
-                                        <th>فوز</th>
-                                        <th>تعادل</th>
-                                        <th>خسارة</th>
-                                        <th>النقاط</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                    `;
-
-                    groups[groupName].forEach((team, index) => {
-                        // حل سحري: استخراج القيم بالترتيب في حال وجود مسافات بالأسماء
-                        const v = Object.values(team);
-                        
-                        // الترتيب المتوقع في الشيت: [المجموعة, الفريق, لعب, فوز, تعادل, خسارة, نقاط]
-                        const teamName = team["الفريق"] || team["الفريق "] || v[1] || "غير معروف";
-                        const played = team["لعب"] || team["لعب "] || v[2] || 0;
-                        const won = team["فوز"] || team["فوز "] || v[3] || 0;
-                        const drawn = team["تعادل"] || team["تعادل "] || v[4] || 0;
-                        const lost = team["خسارة"] || team["خسارة "] || v[5] || 0;
-                        const points = team["نقاط"] || team["النقاط"] || team["نقاط "] || v[6] || 0;
-
-                        groupHtml += `
-                            <tr>
-                                <td class="rank">${index + 1}</td>
-                                <td style="text-align:right; padding-right:30px;"><strong>${teamName}</strong></td>
-                                <td>${played}</td>
-                                <td>${won}</td>
-                                <td>${drawn}</td>
-                                <td>${lost}</td>
-                                <td style="color: var(--secondary); font-weight:bold; font-size:1.1rem;">${points}</td>
-                            </tr>
-                        `;
-                    });
-
-                    groupHtml += `</tbody></table></div>`;
-                    container.innerHTML += groupHtml;
-                }
-            } catch (error) {
-                container.innerHTML = "<p style='color:red; text-align:center;'>خطأ في الاتصال بالسيرفر. تأكد من تشغيل ملف البايثون.</p>";
-            }
+    try {
+        const response = await fetch(`/standings/${sportName}`);
+        const groups = await response.json();
+        
+        if (Object.keys(groups).length === 0) {
+            container.innerHTML = "<p style='text-align:center; padding:20px;'>جاري مزامنة البيانات من Google Sheets...</p>";
+            return;
         }
- async function loadMatches(dayName) {
+
+        let fullHtml = ""; // متغير لتجميع الـ HTML قبل عرضه
+        for (const groupName in groups) {
+            let groupHtml = `
+                <div class="group-container">
+                    <h3 class="group-title">المجموعة ${groupName}</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="rank">المركز</th>
+                                <th>الفريق</th>
+                                <th>لعب</th>
+                                <th>فوز</th>
+                                <th>تعادل</th>
+                                <th>خسارة</th>
+                                <th>النقاط</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            groups[groupName].forEach((team, index) => {
+                const v = Object.values(team);
+                const teamName = team["الفريق"] || team["الفريق "] || v[1] || "غير معروف";
+                const played = team["لعب"] || team["لعب "] || v[2] || 0;
+                const won = team["فوز"] || team["فوز "] || v[3] || 0;
+                const drawn = team["تعادل"] || team["تعادل "] || v[4] || 0;
+                const lost = team["خسارة"] || team["خسارة "] || v[5] || 0;
+                const points = team["نقاط"] || team["النقاط"] || team["نقاط "] || v[6] || 0;
+
+                groupHtml += `
+                    <tr>
+                        <td class="rank">${index + 1}</td>
+                        <td style="text-align:right; padding-right:30px;"><strong>${teamName}</strong></td>
+                        <td>${played}</td>
+                        <td>${won}</td>
+                        <td>${drawn}</td>
+                        <td>${lost}</td>
+                        <td style="color: var(--secondary); font-weight:bold; font-size:1.1rem;">${points}</td>
+                    </tr>
+                `;
+            });
+            groupHtml += `</tbody></table></div>`;
+            fullHtml += groupHtml;
+        }
+        
+        // التحديث النهائي للمحتوى مرة واحدة
+        container.innerHTML = fullHtml;
+
+    } catch (error) {
+        if (container.innerHTML.trim() === "") {
+            container.innerHTML = "<p style='color:red; text-align:center;'>خطأ في الاتصال بالسيرفر.</p>";
+        }
+    }
+}
+async function loadMatches(dayName) {
     document.getElementById('sports-nav').style.display = 'none';
     const container = document.getElementById('groups-container');
     const title = document.getElementById('current-sport-title');
     
-    // تغيير العنوان بناءً على اليوم
     title.innerText = (dayName === 'Day1') ? "جدول مباريات اليوم الأول" : "جدول مباريات اليوم الثاني";
-    container.innerHTML = "<p style='text-align:center;'>جاري تحميل الجدول...</p>";
+
+    // الاحتفاظ بقيمة البحث الحالية قبل التحديث
+    const currentSearch = document.getElementById('teamSearch') ? document.getElementById('teamSearch').value : "";
+
+    if (container.innerHTML.trim() === "") {
+        container.innerHTML = "<p style='text-align:center;'>جاري تحميل الجدول...</p>";
+    }
 
     try {
         const response = await fetch(`/matches/${dayName}`);
@@ -358,12 +369,11 @@
             return;
         }
 
-        // بناء رأس الجدول بناءً على الرياضات الموجودة في الصورة
-        // أضف هذا الجزء داخل متغير tableHtml في وظيفة loadMatches
         let tableHtml = `
             <div class="filter-section" style="margin-bottom: 20px; text-align: center;">
                 <input type="text" id="teamSearch" onkeyup="filterTeams()" 
                     placeholder="ابحث عن اسم فريق..." 
+                    value="${currentSearch}" 
                     style="padding: 10px; width: 300px; border-radius: 8px; border: 1px solid #ddd; outline: none;">
             </div>
             <div class="table-container">
@@ -381,7 +391,6 @@
         `;
 
         data.forEach(row => {
-            // استخراج البيانات مع التأكد من أسماء الأعمدة في شيت جوجل
             const time = row["التوقيت"] || "غير محدد";
             const football = row["Football"] || "-";
             const dodgeball = row["Dodgeball"] || "-";
@@ -402,8 +411,13 @@
         tableHtml += `</tbody></table></div>`;
         container.innerHTML = tableHtml;
 
+        // إعادة تطبيق الفلتر (Highlight) فوراً بعد وضع الـ HTML الجديد
+        if (currentSearch !== "") {
+            filterTeams(); 
+        }
+
     } catch (error) {
-        container.innerHTML = "<p style='color:red; text-align:center;'>فشل في تحميل جدول المباريات.</p>";
+        console.error("خطأ في تحديث المباريات:", error);
     }
 }
 function goHome() {
@@ -448,10 +462,27 @@ function filterTeams() {
 }
         // تحديث تلقائي كل 30 ثانية
         setInterval(() => {
-            const activeCard = document.querySelector('.sport-card.active');
+    const sportsNav = document.getElementById('sports-nav');
+    
+    // إذا كانت أزرار الألعاب ظاهرة، فهذا يعني أننا في "الرئيسية" أو صفحة ألعاب
+    if (sportsNav && sportsNav.style.display !== 'none') {
+        const activeCard = document.querySelector('.sport-card.active');
+        if (activeCard) {
             const sport = activeCard.innerText.split(' ')[0];
+            // تحديث بيانات اللعبة الحالية فقط دون إعادة تحميل الصفحة
             loadStandings(sport, activeCard);
-        }, 30000);
+        }
+    } 
+    // إذا كانت الأزرار مخفية، فنحن غالباً في صفحة جدول المباريات (Day1 أو Day2)
+    else {
+        const currentTitle = document.getElementById('current-sport-title').innerText;
+        if (currentTitle.includes("اليوم الأول")) {
+            loadMatches('Day1');
+        } else if (currentTitle.includes("اليوم الثاني")) {
+            loadMatches('Day2');
+        }
+    }
+}, 30000); // تحديث كل 30 ثانية
 
         window.onload = () => loadStandings('Football', document.querySelector('.sport-card'));
     </script>
