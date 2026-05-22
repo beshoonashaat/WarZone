@@ -200,40 +200,41 @@
         };
 
         async function loadMatches(day) {
-        document.getElementById('view-title').innerText = "مباريات: " + (day === 'Day1' ? 'اليوم الأول' : 'اليوم الثاني');
-        const container = document.getElementById('main-content');
-        container.innerHTML = "جاري التحميل...";
+    const container = document.getElementById('groups-container'); // هنستخدم نفس الحاوية
+    container.innerHTML = "جاري تحميل المباريات...";
+    
+    try {
+        const response = await fetch(`/matches/${day}`);
+        const matches = await response.json();
         
-        try {
-            const res = await fetch(`/matches/${day}`);
-            const matches = await res.json();
-            
-            let html = '<div class="matches-list">';
-            
-            matches.forEach(m => {
-                html += `
-                    <div class="match-card">
-                        <div class="match-time">${m.الوقت || '--:--'}</div>
-                        
-                        <div class="match-info">
-                            <span class="match-sport-tag">${m.اللعبة || 'اللعبة'}</span>
-                            <div class="match-teams">
-                                <span>${m["الفريق الأول"] || 'فريق 1'}</span>
-                                <span class="match-score">${m.النتيجة || 'VS'}</span>
-                                <span>${m["الفريق الثاني"] || 'فريق 2'}</span>
-                            </div>
-                        </div>
-                        
-                        <div class="match-status">${m.الحالة || ''}</div>
-                    </div>
-                `;
-            });
-            
-            container.innerHTML = html + "</div>";
-        } catch (e) {
-            container.innerHTML = "خطأ في تحميل البيانات.";
-        }
+        let html = `<h2 style="text-align:center">جدول مباريات ${day}</h2><table>
+                    <thead><tr><th>الوقت</th><th>اللعبة</th><th>المباراة</th><th>النتيجة</th><th>الحالة</th></tr></thead><tbody>`;
+        
+        matches.forEach(m => {
+            html += `<tr>
+                <td>${m.الوقت}</td>
+                <td>${m.اللعبة}</td>
+                <td>${m["الفريق الأول"]} VS ${m["الفريق الثاني"]}</td>
+                <td style="font-weight:bold; color:var(--accent)">${m.النتيجة || '-'}</td>
+                <td>${m.الحالة}</td>
+            </tr>`;
+        });
+        html += "</tbody></table>";
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = "خطأ في تحميل المباريات.";
     }
+}
+
+        function showSection(section) {
+            if (section === 'standings') {
+                document.querySelector('.sports-container').style.display = 'grid';
+                loadStandings('Football', document.querySelector('.sport-card'));
+            } else {
+                document.querySelector('.sports-container').style.display = 'none';
+                loadMatches(section === 'day1' ? 'Day1' : 'Day2');
+            }
+        }
     </script>
 </body>
 </html>
