@@ -233,20 +233,20 @@
     <header>
         <h1>🏆 War Zone Standings</h1>
     </header>
-    <nav class="top-nav">
-    <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})">الرئيسية</button>
+<nav class="top-nav">
+    <button onclick="goHome()">الرئيسية</button>
     <button onclick="loadMatches('Day1')">جدول مباريات اليوم 1</button>
     <button onclick="loadMatches('Day2')">جدول مباريات اليوم 2</button>
 </nav>
 
     
 
-    <div class="sports-container">
-        <div class="sport-card active" onclick="loadStandings('Football', this)">Football ⚽</div>
-        <div class="sport-card" onclick="loadStandings('Dodgeball', this)">Dodgeball 🎯</div>
-        <div class="sport-card" onclick="loadStandings('Volleyball', this)">Volleyball 🏐</div>
-        <div class="sport-card" onclick="loadStandings('Ultimate Ball', this)">Ultimate Ball 🥏</div>
-    </div>
+<div id="sports-nav" class="sports-container">
+    <div class="sport-card active" onclick="loadStandings('Football', this)">Football ⚽</div>
+    <div class="sport-card" onclick="loadStandings('Dodgeball', this)">Dodgeball 🎯</div>
+    <div class="sport-card" onclick="loadStandings('Volleyball', this)">Volleyball 🏐</div>
+    <div class="sport-card" onclick="loadStandings('Ultimate Ball', this)">Ultimate Ball 🥏</div>
+</div>
 
     <div class="standings-section">
         <h2 id="current-sport-title" style="text-align: left;">جدول ترتيب: Football</h2>
@@ -327,6 +327,7 @@
             }
         }
  async function loadMatches(dayName) {
+    document.getElementById('sports-nav').style.display = 'none';
     const container = document.getElementById('groups-container');
     const title = document.getElementById('current-sport-title');
     
@@ -384,6 +385,17 @@
     } catch (error) {
         container.innerHTML = "<p style='color:red; text-align:center;'>فشل في تحميل جدول المباريات.</p>";
     }
+}
+function goHome() {
+    // إظهار أزرار الألعاب مرة أخرى
+    document.getElementById('sports-nav').style.display = 'grid';
+    
+    // التمرير للأعلى
+    window.scrollTo({top: 0, behavior: 'smooth'});
+    
+    // تحميل جدول أول رياضة تلقائياً (مثل الـ Football)
+    const firstSport = document.querySelector('.sport-card');
+    loadStandings('Football', firstSport);
 }
 
         // تحديث تلقائي كل 30 ثانية
