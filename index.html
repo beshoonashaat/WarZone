@@ -225,6 +225,20 @@
 .matches-matrix tr:hover td {
     background-color: #f0f9ff; /* تأثير عند تمرير الماوس */
 }
+#teamSearch:focus {
+    border-color: var(--secondary) !important;
+    box-shadow: 0 0 8px rgba(2, 132, 199, 0.2);
+    transition: all 0.3s ease;
+}
+/* التنسيق الخاص بالخانة المميزة */
+.highlight-cell {
+    background-color: #fef3c7 !important; /* لون أصفر هادئ */
+    border: 2px solid #f59e0b !important; /* إطار برتقالي */
+    transform: scale(1.05); /* تكبير بسيط للفت الانتباه */
+    transition: all 0.2s ease;
+    font-weight: bold;
+    color: #b45309 !important;
+}
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
@@ -345,9 +359,15 @@
         }
 
         // بناء رأس الجدول بناءً على الرياضات الموجودة في الصورة
+        // أضف هذا الجزء داخل متغير tableHtml في وظيفة loadMatches
         let tableHtml = `
+            <div class="filter-section" style="margin-bottom: 20px; text-align: center;">
+                <input type="text" id="teamSearch" onkeyup="filterTeams()" 
+                    placeholder="ابحث عن اسم فريق..." 
+                    style="padding: 10px; width: 300px; border-radius: 8px; border: 1px solid #ddd; outline: none;">
+            </div>
             <div class="table-container">
-                <table class="matches-matrix">
+                <table class="matches-matrix" id="matchesTable">
                     <thead>
                         <tr>
                             <th>التوقيت</th>
@@ -397,7 +417,35 @@ function goHome() {
     const firstSport = document.querySelector('.sport-card');
     loadStandings('Football', firstSport);
 }
+function filterTeams() {
+    const input = document.getElementById("teamSearch");
+    const filter = input.value.toLowerCase();
+    const table = document.getElementById("matchesTable");
+    const cells = table.getElementsByTagName("td");
 
+    // إذا كانت خانة البحث فارغة، نحذف التمييز من الكل
+    if (filter === "") {
+        for (let i = 0; i < cells.length; i++) {
+            cells[i].classList.remove("highlight-cell");
+        }
+        return;
+    }
+
+    // نمر على كل خلايا الجدول
+    for (let i = 0; i < cells.length; i++) {
+        const cell = cells[i];
+        const text = cell.textContent || cell.innerText;
+
+        // لا نقوم بتمييز عمود التوقيت (أول عمود غالباً)
+        if (cell.classList.contains("time-column")) continue;
+
+        if (text.toLowerCase().indexOf(filter) > -1) {
+            cell.classList.add("highlight-cell");
+        } else {
+            cell.classList.remove("highlight-cell");
+        }
+    }
+}
         // تحديث تلقائي كل 30 ثانية
         setInterval(() => {
             const activeCard = document.querySelector('.sport-card.active');
