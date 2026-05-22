@@ -335,7 +335,7 @@
     container.innerHTML = "<p style='text-align:center;'>جاري تحميل الجدول...</p>";
 
     try {
-        const response = await fetch(`http://127.0.0.1:8000/matches/${dayName}`);
+        const response = await fetch(`/matches/${dayName}`);
         const data = await response.json();
 
         if (!data || data.length === 0) {
