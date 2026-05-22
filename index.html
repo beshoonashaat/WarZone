@@ -128,7 +128,7 @@
             const container = document.getElementById('groups-container');
 
             try {
-                const response = await fetch(`http://127.0.0.1:8000/standings/${sportName}`);
+                const response = await fetch(`/standings/${sportName}`);
                 const groups = await response.json();
                 
                 container.innerHTML = "";
