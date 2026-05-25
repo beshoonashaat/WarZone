@@ -15,7 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- ضع روابطك الحقيقية هنا ---
+# الروابط الخاصة بك
 SHEET_URLS = {
     "Football": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqzlySvoK19S0Maw_xLSlUMmGcOPx6eNqiwKJKCtrHwkDxKuO95ZJKbvyNcXns8TxRe1oYnhZRtlNs/pub?gid=621025358&single=true&output=csv",
     "Dodgeball": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqzlySvoK19S0Maw_xLSlUMmGcOPx6eNqiwKJKCtrHwkDxKuO95ZJKbvyNcXns8TxRe1oYnhZRtlNs/pub?gid=863642824&single=true&output=csv",
@@ -45,11 +45,18 @@ async def sync_all_data_loop():
                     df = pd.read_csv(StringIO(response.text))
                     df.columns = df.columns.str.strip()
                     df.rename(columns=lambda x: x.replace('\n', '').strip(), inplace=True)
-                    if 'المجموعة' in df.columns and 'نقاط' in df.columns:
-                        df['نقاط'] = pd.to_numeric(df['نقاط'], errors='coerce').fillna(0)
-                        df = df.sort_values(by=['المجموعة', 'نقاط'], ascending=[True, False])
+                    
+                    # تنظيف البيانات ومعالجة النقاط
+                    if 'المجموعة' in df.columns:
+                        if 'نقاط' in df.columns:
+                            df['نقاط'] = pd.to_numeric(df['نقاط'], errors='coerce').fillna(0)
+                            df = df.sort_values(by=['المجموعة', 'نقاط'], ascending=[True, False])
+                        
+                        # تحويل الـ NaN إلى نصوص فارغة لمنع خطأ JSON
+                        df = df.fillna("")
                         all_sports_data[sport] = df.to_dict(orient='records')
-            except Exception as e: print(f"❌ خطأ {sport}: {e}")
+            except Exception as e: 
+                print(f"❌ خطأ في {sport}: {e}")
 
         # مزامنة المباريات
         for day, url in MATCHES_URLS.items():
@@ -59,8 +66,12 @@ async def sync_all_data_loop():
                     response.encoding = 'utf-8'
                     df = pd.read_csv(StringIO(response.text))
                     df.columns = df.columns.str.strip()
+                    
+                    # تحويل الـ NaN إلى نصوص فارغة لمنع خطأ JSON
+                    df = df.fillna("")
                     all_matches_data[day] = df.to_dict(orient='records')
-            except Exception as e: print(f"❌ خطأ {day}: {e}")
+            except Exception as e: 
+                print(f"❌ خطأ في {day}: {e}")
         
         print("✅ تم تحديث كل البيانات")
         await asyncio.sleep(120)
@@ -70,15 +81,20 @@ async def startup_event():
     asyncio.create_task(sync_all_data_loop())
 
 @app.get("/")
-async def serve_home(): return FileResponse("index.html")
+async def serve_home(): 
+    return FileResponse("index.html")
 
 @app.get("/standings/{sport_name}")
 def get_standings(sport_name: str):
     data = all_sports_data.get(sport_name, [])
     groups = {}
     for entry in data:
+        # التأكد من الحصول على قيمة المجموعة حتى لو كانت العمود فارغاً
         grp = str(entry.get('المجموعة', 'A'))
-        if grp not in groups: groups[grp] = []
+        if not grp: grp = "A"
+        
+        if grp not in groups: 
+            groups[grp] = []
         groups[grp].append(entry)
     return groups
 
