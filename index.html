@@ -314,12 +314,12 @@
 
             groups[groupName].forEach((team, index) => {
                 const v = Object.values(team);
-                const teamName = team["الفريق"] || team["الفريق "] || v[1] || "غير معروف";
-                const played = team["لعب"] || team["لعب "] || v[2] || 0;
-                const won = team["فوز"] || team["فوز "] || v[3] || 0;
-                const drawn = team["تعادل"] || team["تعادل "] || v[4] || 0;
-                const lost = team["خسارة"] || team["خسارة "] || v[5] || 0;
-                const points = team["نقاط"] || team["النقاط"] || team["نقاط "] || v[6] || 0;
+                const teamName = team["الفريق"] || team["الفريق "] || v[9] || "غير معروف";
+                const played = team["لعب"] || team["لعب "] || v[10] || 0;
+                const won = team["فوز"] || team["فوز "] || v[11] || 0;
+                const drawn = team["تعادل"] || team["تعادل "] || v[12] || 0;
+                const lost = team["خسارة"] || team["خسارة "] || v[13] || 0;
+                const points = team["نقاط"] || team["النقاط"] || team["نقاط "] || v[14] || 0;
 
                 groupHtml += `
                     <tr>
