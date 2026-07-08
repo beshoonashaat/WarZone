@@ -53,3 +53,31 @@ file_...                             # uploaded player photos/cards
 ```
 
 If the Drive variables are missing, the app falls back to `/tmp`, which is temporary on Vercel.
+
+## Hourly Google Drive backups
+
+Vercel Cron is configured in `vercel.json` to call:
+
+```txt
+/api/admin/backup-hourly
+```
+
+every hour using:
+
+```txt
+0 * * * *
+```
+
+Backups are saved in a Google Drive folder named:
+
+```txt
+warzone_backups
+```
+
+Recommended extra environment variable:
+
+```txt
+CRON_SECRET=<any-long-random-secret>
+```
+
+Note: Vercel Cron cannot send this custom secret by default unless you call the endpoint yourself with `?secret=...`. If `CRON_SECRET` is not set, the cron endpoint is open but only creates backups.

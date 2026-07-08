@@ -23,6 +23,7 @@ except Exception:
 
 app = FastAPI(title="War Zone Control")
 from registration_routes import router as registration_router
+import registration_routes as registration_data_module
 app.include_router(registration_router)
 
 app.add_middleware(
@@ -31,6 +32,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+
+@app.get("/api/admin/backup-hourly")
+def hourly_drive_backup(request: Request):
+    secret = os.getenv("CRON_SECRET", "").strip()
+    supplied = request.headers.get("x-cron-secret") or request.query_params.get("secret") or request.headers.get("authorization", "").replace("Bearer ", "")
+    # Vercel Cron may call without custom headers; allow if no CRON_SECRET is configured, but setting it is recommended.
+    if secret and supplied != secret:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not drive_store.enabled():
+        raise HTTPException(status_code=400, detail="Google Drive storage is not configured.")
+    snapshot = {
+        "created_at": datetime.now().isoformat(),
+        "warzone_main": load_data(),
+        "registrations": registration_data_module.load_data(),
+        "whatsapp_groups": registration_data_module.load_whatsapp_groups(),
+    }
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_id = drive_store.save_backup(f"warzone_backup_{stamp}.json", snapshot)
+    if not backup_id:
+        raise HTTPException(status_code=500, detail="Failed to create Google Drive backup.")
+    return {"status": "success", "message": "Backup created", "backup_id": backup_id, "created_at": snapshot["created_at"]}
+
 
 # =========================
 # ثابت الألعاب والملفات

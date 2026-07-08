@@ -123,3 +123,33 @@ def delete_ref(ref: str) -> bool:
         return True
     except Exception:
         return False
+
+
+
+def _ensure_folder(name: str, parent_id: str) -> Optional[str]:
+    svc = _service()
+    if not svc:
+        return None
+    q = f"'{parent_id}' in parents and name='{name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    res = svc.files().list(q=q, spaces="drive", fields="files(id,name)", pageSize=1).execute()
+    files = res.get("files", [])
+    if files:
+        return files[0]["id"]
+    meta = {"name": name, "parents": [parent_id], "mimeType": "application/vnd.google-apps.folder"}
+    created = svc.files().create(body=meta, fields="id").execute()
+    return created.get("id")
+
+
+def save_backup(name: str, data: Any) -> Optional[str]:
+    svc = _service()
+    if not svc:
+        return None
+    backup_folder = _ensure_folder("warzone_backups", _FOLDER_ID)
+    if not backup_folder:
+        return None
+    raw = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+    media = MediaIoBaseUpload(BytesIO(raw), mimetype="application/json", resumable=False)
+    safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in name)
+    meta = {"name": safe_name, "parents": [backup_folder], "mimeType": "application/json"}
+    created = svc.files().create(body=meta, media_body=media, fields="id,webViewLink").execute()
+    return created.get("id")
