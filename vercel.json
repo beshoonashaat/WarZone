@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "main.py"
+    }
+  ],
+  "env": {
+    "REGISTRATION_DATA_DIR": "/tmp/registration_data",
+    "WARZONE_DATA_FILE": "/tmp/warzone_data.json"
+  }
+}

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from pathlib import Path
+import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from io import StringIO
@@ -53,7 +54,7 @@ DEFAULT_VISIBILITY = {
     "results_day2": True,
 }
 
-DATA_FILE = Path("warzone_data.json")
+DATA_FILE = Path(os.getenv("WARZONE_DATA_FILE", "/tmp/warzone_data.json"))
 
 DEFAULT_MATCHES_URLS = {
     "Day1": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTPGvQX6sgITTWxbUXDqQzLSmQqU6TBxmZJDt0DS9pKOMNnoK7490Bn1TvNQrFlGdJZIH0Z9YPGTYb6/pub?gid=186915705&single=true&output=csv",

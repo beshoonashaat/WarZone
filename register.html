@@ -231,7 +231,7 @@ document.getElementById('registrationForm').addEventListener('submit', async (e)
       players.push(data);
     }
     
-    const result=await fetchJsonWithTimeout('https://warzone-production-9574.up.railway.app/api/register-team-json',{
+    const result=await fetchJsonWithTimeout('/api/register-team-json',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({team_name: document.getElementById('teamName').value.trim(), players})
