@@ -657,60 +657,147 @@ async def register_team(request: Request):
     }
 
 
-@router.post("/api/registrations/import-excel")
-async def import_registration_excel(request: Request, team_name: str = Form(""), file: UploadFile = File(...)):
+@router.get("/api/public-teams")
+def public_teams(request: Request):
+    data = load_data()
+    teams = []
+    for team in data.get("teams", []):
+        players = []
+        for player in team.get("players", []):
+            files = player.get("files", {}) or {}
+            photo_url = ""
+            if files.get("photo"):
+                photo_url = str(request.base_url).rstrip("/") + f"/api/public-registration-photo/{team.get('id')}/{player.get('id')}"
+            players.append({
+                "id": player.get("id"),
+                "name": player.get("name"),
+                "university": player.get("university"),
+                "college": player.get("college"),
+                "gender": player.get("gender"),
+                "photo_url": photo_url,
+            })
+        teams.append({"id": team.get("id"), "team_name": team.get("team_name"), "players_count": len(players), "players": players})
+    return {"teams": teams, "count": len(teams)}
+
+
+@router.get("/api/public-registration-photo/{team_id}/{player_id}")
+def get_public_registration_photo(team_id: str, player_id: str):
+    data = load_data()
+    for team in data.get("teams", []):
+        if team.get("id") == team_id:
+            for player in team.get("players", []):
+                if player.get("id") == player_id:
+                    rel = (player.get("files") or {}).get("photo")
+                    if not rel:
+                        raise HTTPException(status_code=404, detail="الصورة غير موجودة.")
+                    path = DATA_DIR / rel
+                    if not path.exists():
+                        raise HTTPException(status_code=404, detail="الصورة غير موجودة على السيرفر.")
+                    return FileResponse(path)
+    raise HTTPException(status_code=404, detail="الصورة غير موجودة.")
+
+
+@router.get("/api/registrations/excel-template")
+def download_registration_excel_template(request: Request):
+    require_admin(request)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "War Zone Team"
+    ws.append(["اسم الفريق", "اكتب اسم الفريق هنا"])
+    ws.append([])
+    headers = ["الاسم", "السن", "تاريخ الميلاد", "الرقم القومي", "الجامعة", "الكلية", "النوع"]
+    ws.append(headers)
+    sample_rows = [
+        ["لاعب 1", 20, "2006-01-01", "30101011234567", "جامعة القاهرة", "تجارة", "ذكر"],
+        ["لاعبة 1", 20, "2006-01-02", "30101021234567", "جامعة القاهرة", "تجارة", "أنثى"],
+    ]
+    for row in sample_rows:
+        ws.append(row)
+    for cell in ws[3]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="0284C7")
+        cell.alignment = Alignment(horizontal="center")
+    widths = [26, 12, 18, 22, 24, 24, 12]
+    for idx, width in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + idx)].width = width
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=warzone_team_template.xlsx"},
+    )
+
+
+@router.post("/api/registrations/import-excel/preview")
+async def preview_registration_excel(request: Request, team_name: str = Form(""), file: UploadFile = File(...)):
     require_admin(request)
     if not file.filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="ارفع ملف Excel بصيغة .xlsx أو .xlsm")
-
-    data = load_data()
-    if len(data.get("teams", [])) >= MAX_TEAMS:
-        raise HTTPException(status_code=400, detail=f"تم اكتمال عدد الفرق المسموح به: {MAX_TEAMS} فريق.")
-
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="ملف الإكسيل فارغ.")
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=400, detail=f"حجم الملف أكبر من {MAX_UPLOAD_MB}MB.")
-
     parsed = parse_registration_excel(content, team_name or Path(file.filename).stem)
-    parsed_team_name = parsed["team_name"]
-    players = parsed["players"]
+    data = load_data()
+    ensure_team_name_unique(data, parsed["team_name"])
+    validate_players(parsed["players"])
+    existing_ids = {p.get("national_id") for t in data.get("teams", []) for p in t.get("players", [])}
+    for p in parsed["players"]:
+        if p.get("national_id") in existing_ids:
+            raise HTTPException(status_code=409, detail=f"الرقم القومي {p.get('national_id')} مسجل قبل كده في فريق آخر.")
+    males = sum(1 for p in parsed["players"] if p.get("gender") == "ذكر")
+    females = sum(1 for p in parsed["players"] if p.get("gender") == "أنثى")
+    return {"status":"success", "team_name": parsed["team_name"], "players": parsed["players"], "players_count": len(parsed["players"]), "males": males, "females": females}
 
-    ensure_team_name_unique(data, parsed_team_name)
+
+@router.post("/api/registrations/import-excel/confirm")
+async def confirm_registration_excel(request: Request):
+    require_admin(request)
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="بيانات الاعتماد غير صحيحة.")
+    data = load_data()
+    if len(data.get("teams", [])) >= MAX_TEAMS:
+        raise HTTPException(status_code=400, detail=f"تم اكتمال عدد الفرق المسموح به: {MAX_TEAMS} فريق.")
+    team_name = str(payload.get("team_name", "")).strip()
+    players_raw = payload.get("players", [])
+    if not isinstance(players_raw, list):
+        raise HTTPException(status_code=400, detail="بيانات اللاعبين لازم تكون قائمة.")
+    players = []
+    for raw in players_raw:
+        players.append({
+            "id": uuid.uuid4().hex,
+            "name": str(raw.get("name", "")).strip(),
+            "age": to_english_digits(raw.get("age", "")),
+            "birthdate": to_english_digits(raw.get("birthdate", "")),
+            "national_id": to_english_digits(raw.get("national_id", "")),
+            "university": str(raw.get("university", "")).strip(),
+            "college": str(raw.get("college", "")).strip(),
+            "gender": excel_gender(raw.get("gender", "")),
+            "files": {},
+        })
+    ensure_team_name_unique(data, team_name)
     validate_players(players)
-
     existing_ids = {p.get("national_id") for t in data.get("teams", []) for p in t.get("players", [])}
     for p in players:
         if p.get("national_id") in existing_ids:
             raise HTTPException(status_code=409, detail=f"الرقم القومي {p.get('national_id')} مسجل قبل كده في فريق آخر.")
-
-    team = {
-        "id": uuid.uuid4().hex,
-        "team_name": parsed_team_name,
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
-        "players": players,
-        "source": "excel_import",
-        "source_filename": file.filename,
-    }
-
+    team = {"id": uuid.uuid4().hex, "team_name": team_name, "created_at": now_iso(), "updated_at": now_iso(), "players": players, "source": "excel_import"}
     whatsapp_group = assign_whatsapp_group(team["id"])
     team["whatsapp_group_slot"] = whatsapp_group.get("slot")
     data["teams"].append(team)
     save_data(data)
-    return {
-        "status": "success",
-        "message": "تم استيراد الفريق من الإكسيل ✅",
-        "team_id": team["id"],
-        "team_name": team["team_name"],
-        "players_count": len(players),
-        "whatsapp_group": {
-            "slot": whatsapp_group.get("slot"),
-            "name": whatsapp_group.get("name"),
-            "link": whatsapp_group.get("link"),
-        },
-    }
+    return {"status":"success", "message":"تم اعتماد الفريق من الإكسيل ✅", "team_id":team["id"], "team_name":team_name, "players_count":len(players), "whatsapp_group":{"slot":whatsapp_group.get("slot"), "name":whatsapp_group.get("name"), "link":whatsapp_group.get("link")}}
+
+
+@router.post("/api/registrations/import-excel")
+async def import_registration_excel(request: Request, team_name: str = Form(""), file: UploadFile = File(...)):
+    # Backward-compatible direct import path: now returns preview instead of saving immediately.
+    return await preview_registration_excel(request, team_name, file)
 
 
 @router.get("/api/registrations")

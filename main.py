@@ -1169,6 +1169,12 @@ async def serve_draw_settings():
     return FileResponse("draw_settings.html")
 
 
+
+
+@app.get("/teams")
+def teams_page():
+    return FileResponse("teams.html")
+
 @app.get("/sw.js")
 async def serve_sw():
     return FileResponse("sw.js", media_type="application/javascript")

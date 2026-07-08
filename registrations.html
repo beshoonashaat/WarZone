@@ -43,8 +43,9 @@
           <input id="excelTeamName" placeholder="اسم الفريق / المنتخب (اختياري لو موجود في الإكسيل)">
           <input id="excelFile" type="file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
         </div>
-        <div class="actions" style="margin-top:12px"><button class="green" onclick="importExcelTeam()">رفع واعتماد الفريق ✅</button></div>
+        <div class="actions" style="margin-top:12px"><a class="btn secondary" href="/api/registrations/excel-template?p=" onclick="this.href='/api/registrations/excel-template?p='+encodeURIComponent(PASS)">تحميل نموذج Excel</a><button class="green" onclick="previewExcelTeam()">معاينة الملف</button><button id="confirmExcelBtn" class="yellow" style="display:none" onclick="confirmExcelTeam()">اعتماد الفريق ✅</button></div>
         <div id="excelStatus" style="margin-top:10px"></div>
+        <div id="excelPreview" style="display:none;margin-top:14px" class="table-wrap"></div>
       </div>
       <div class="table-wrap"><table><thead><tr><th>اسم المنتخب</th><th>عدد الأفراد</th><th>ذكور</th><th>إناث</th><th>جروب واتساب</th><th>آخر تعديل</th><th>تحكم</th></tr></thead><tbody id="teamsBody"></tbody></table></div>
       <div id="mainStatus" class="status"></div>
@@ -131,17 +132,32 @@ async function saveEdit(){
   try{await api('/api/registrations/'+currentTeam.id,{method:'PUT',body:fd});status('editStatus','تم حفظ التعديل ✅',true);await loadTeams();setTimeout(closeModal,700);}catch(e){status('editStatus',e.message,false)}
 }
 async function deleteTeam(id){if(!confirm('متأكد من حذف الفريق وكل الصور؟'))return;try{await api('/api/registrations/'+id,{method:'DELETE'});await loadTeams();status('mainStatus','تم حذف الفريق',true)}catch(e){status('mainStatus',e.message,false)}}
-async function importExcelTeam(){
+let excelPreviewData=null;
+async function previewExcelTeam(){
   const fileInput=document.getElementById('excelFile');
   const teamName=document.getElementById('excelTeamName').value.trim();
   if(!fileInput.files || !fileInput.files[0]){status('excelStatus','اختار ملف Excel الأول.',false);return;}
-  const fd=new FormData();
-  fd.append('file', fileInput.files[0]);
-  fd.append('team_name', teamName);
+  const fd=new FormData(); fd.append('file', fileInput.files[0]); fd.append('team_name', teamName);
   try{
-    const result=await api('/api/registrations/import-excel',{method:'POST',body:fd});
-    status('excelStatus',`${result.message || 'تم الاستيراد ✅'} - ${result.team_name} (${result.players_count} لاعب)`,true);
-    fileInput.value=''; document.getElementById('excelTeamName').value='';
+    const result=await api('/api/registrations/import-excel/preview',{method:'POST',body:fd});
+    excelPreviewData={team_name:result.team_name, players:result.players||[]};
+    status('excelStatus',`المعاينة جاهزة: ${result.team_name} - ${result.players_count} لاعب (${result.males} ذكور / ${result.females} إناث)`,true);
+    renderExcelPreview(result);
+    document.getElementById('confirmExcelBtn').style.display='inline-flex';
+  }catch(e){excelPreviewData=null;document.getElementById('confirmExcelBtn').style.display='none';document.getElementById('excelPreview').style.display='none';status('excelStatus',e.message,false)}
+}
+function renderExcelPreview(result){
+  const box=document.getElementById('excelPreview'); box.style.display='block';
+  box.innerHTML=`<table><thead><tr><th>#</th><th>الاسم</th><th>السن</th><th>تاريخ الميلاد</th><th>الرقم القومي</th><th>الجامعة</th><th>الكلية</th><th>النوع</th></tr></thead><tbody>${(result.players||[]).map((p,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.age)}</td><td>${escapeHtml(p.birthdate)}</td><td>${escapeHtml(p.national_id)}</td><td>${escapeHtml(p.university)}</td><td>${escapeHtml(p.college)}</td><td>${escapeHtml(p.gender)}</td></tr>`).join('')}</tbody></table>`;
+}
+async function confirmExcelTeam(){
+  if(!excelPreviewData){status('excelStatus','اعمل معاينة للملف الأول.',false);return;}
+  if(!confirm('اعتماد الفريق وإضافته للتسجيلات؟'))return;
+  try{
+    const result=await api('/api/registrations/import-excel/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(excelPreviewData)});
+    status('excelStatus',`${result.message} - ${result.team_name} (${result.players_count} لاعب)`,true);
+    excelPreviewData=null; document.getElementById('confirmExcelBtn').style.display='none'; document.getElementById('excelPreview').style.display='none';
+    document.getElementById('excelFile').value=''; document.getElementById('excelTeamName').value='';
     await loadTeams();
   }catch(e){status('excelStatus',e.message,false)}
 }
