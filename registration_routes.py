@@ -14,10 +14,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse, Response
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
+import drive_store
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("REGISTRATION_DATA_DIR", APP_DIR / "registration_data"))
@@ -215,6 +216,9 @@ def now_iso() -> str:
 
 
 def load_data() -> Dict[str, Any]:
+    remote_data = drive_store.load_json("registrations")
+    if isinstance(remote_data, dict) and isinstance(remote_data.get("teams"), list):
+        return remote_data
     if not DATA_FILE.exists():
         return {"teams": []}
     try:
@@ -233,6 +237,10 @@ def save_data(data: Dict[str, Any]) -> None:
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     tmp.replace(DATA_FILE)
+    try:
+        drive_store.save_json("registrations", data)
+    except Exception:
+        pass
 
 
 def default_whatsapp_groups() -> Dict[str, Any]:
@@ -245,15 +253,19 @@ def default_whatsapp_groups() -> Dict[str, Any]:
 
 
 def load_whatsapp_groups() -> Dict[str, Any]:
-    if not WHATSAPP_GROUPS_FILE.exists():
+    remote_data = drive_store.load_json("whatsapp_groups")
+    if isinstance(remote_data, dict):
+        data = remote_data
+    elif not WHATSAPP_GROUPS_FILE.exists():
         data = default_whatsapp_groups()
         save_whatsapp_groups(data)
         return data
-    try:
-        with WHATSAPP_GROUPS_FILE.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        data = default_whatsapp_groups()
+    else:
+        try:
+            with WHATSAPP_GROUPS_FILE.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = default_whatsapp_groups()
 
     groups = data.get("groups") if isinstance(data, dict) else None
     if not isinstance(groups, list):
@@ -285,6 +297,10 @@ def save_whatsapp_groups(data: Dict[str, Any]) -> None:
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     tmp.replace(WHATSAPP_GROUPS_FILE)
+    try:
+        drive_store.save_json("whatsapp_groups", data)
+    except Exception:
+        pass
 
 
 def group_for_team(team_id: str) -> Optional[Dict[str, Any]]:
@@ -425,9 +441,13 @@ async def save_uploaded_file(upload: StarletteUploadFile, team_id: str, player_i
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=400, detail=f"حجم الصورة لا يزيد عن {MAX_UPLOAD_MB}MB.")
 
+    filename = f"{kind}_{uuid.uuid4().hex}{ext}"
+    gref = drive_store.upload_bytes(f"file_{team_id}_{player_id}_{filename}", data, content_type or "application/octet-stream")
+    if gref:
+        return gref
+
     folder = UPLOAD_DIR / team_id / player_id
     folder.mkdir(parents=True, exist_ok=True)
-    filename = f"{kind}_{uuid.uuid4().hex}{ext}"
     path = folder / filename
     with path.open("wb") as f:
         f.write(data)
@@ -435,6 +455,13 @@ async def save_uploaded_file(upload: StarletteUploadFile, team_id: str, player_i
 
 
 def delete_team_files(team_id: str) -> None:
+    data = load_data()
+    for team in data.get("teams", []):
+        if team.get("id") == team_id:
+            for player in team.get("players", []):
+                for rel in (player.get("files") or {}).values():
+                    if str(rel).startswith("gdrive:"):
+                        drive_store.delete_ref(rel)
     folder = UPLOAD_DIR / team_id
     if folder.exists():
         shutil.rmtree(folder, ignore_errors=True)
@@ -680,6 +707,18 @@ def public_teams(request: Request):
     return {"teams": teams, "count": len(teams)}
 
 
+def file_response_from_ref(rel: str, fallback_name: str = "file"):
+    if str(rel).startswith("gdrive:"):
+        blob = drive_store.download_bytes(rel)
+        if blob is None:
+            raise HTTPException(status_code=404, detail="الملف غير موجود على Google Drive.")
+        return Response(content=blob, media_type="application/octet-stream", headers={"Content-Disposition": f"inline; filename={fallback_name}"})
+    path = DATA_DIR / rel
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="الملف غير موجود على السيرفر.")
+    return FileResponse(path)
+
+
 @router.get("/api/public-registration-photo/{team_id}/{player_id}")
 def get_public_registration_photo(team_id: str, player_id: str):
     data = load_data()
@@ -690,10 +729,7 @@ def get_public_registration_photo(team_id: str, player_id: str):
                     rel = (player.get("files") or {}).get("photo")
                     if not rel:
                         raise HTTPException(status_code=404, detail="الصورة غير موجودة.")
-                    path = DATA_DIR / rel
-                    if not path.exists():
-                        raise HTTPException(status_code=404, detail="الصورة غير موجودة على السيرفر.")
-                    return FileResponse(path)
+                    return file_response_from_ref(rel, "photo.jpg")
     raise HTTPException(status_code=404, detail="الصورة غير موجودة.")
 
 
@@ -979,6 +1015,14 @@ def download_team_package(team_id: str, request: Request):
                 rel = (player.get("files", {}) or {}).get(kind)
                 if not rel:
                     continue
+                if str(rel).startswith("gdrive:"):
+                    blob = drive_store.download_bytes(rel)
+                    if not blob:
+                        continue
+                    ext = ".jpg"
+                    arc_name = f"{team_folder}/photos/{player_folder}/{file_labels.get(kind, kind)}{ext}"
+                    zf.writestr(arc_name, blob)
+                    continue
                 src_path = DATA_DIR / rel
                 if not src_path.exists() or not src_path.is_file():
                     continue
@@ -1060,8 +1104,5 @@ def get_registration_file(team_id: str, player_id: str, kind: str, request: Requ
                     rel = player.get("files", {}).get(kind)
                     if not rel:
                         raise HTTPException(status_code=404, detail="الملف غير موجود.")
-                    path = DATA_DIR / rel
-                    if not path.exists():
-                        raise HTTPException(status_code=404, detail="الملف غير موجود على السيرفر.")
-                    return FileResponse(path)
+                    return file_response_from_ref(rel, f"{kind}.jpg")
     raise HTTPException(status_code=404, detail="الملف غير موجود.")

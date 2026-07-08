@@ -12,6 +12,7 @@ import hashlib
 import json
 import requests
 import pandas as pd
+import drive_store
 
 try:
     from pywebpush import webpush, WebPushException
@@ -321,16 +322,19 @@ def blank_data() -> Dict[str, Any]:
 
 
 def load_data() -> Dict[str, Any]:
-    if not DATA_FILE.exists():
+    remote_data = drive_store.load_json("warzone_main")
+    if isinstance(remote_data, dict):
+        data = remote_data
+    elif not DATA_FILE.exists():
         data = blank_data()
         save_data(data)
         return data
-
-    try:
-        with DATA_FILE.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        data = blank_data()
+    else:
+        try:
+            with DATA_FILE.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = blank_data()
 
     # migrations / safety
     data.setdefault("groups", {})
@@ -355,8 +359,13 @@ def load_data() -> Dict[str, Any]:
 
 
 def save_data(data: Dict[str, Any]) -> None:
+    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     with DATA_FILE.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        drive_store.save_json("warzone_main", data)
+    except Exception:
+        pass
 
 
 def normalize_text(value: Any) -> str:
