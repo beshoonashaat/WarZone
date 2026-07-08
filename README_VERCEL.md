@@ -62,10 +62,10 @@ Vercel Cron is configured in `vercel.json` to call:
 /api/admin/backup-hourly
 ```
 
-every hour using:
+once daily on Hobby plan using:
 
 ```txt
-0 * * * *
+0 1 * * *
 ```
 
 Backups are saved in a Google Drive folder named:
@@ -81,3 +81,7 @@ CRON_SECRET=<any-long-random-secret>
 ```
 
 Note: Vercel Cron cannot send this custom secret by default unless you call the endpoint yourself with `?secret=...`. If `CRON_SECRET` is not set, the cron endpoint is open but only creates backups.
+
+## Manual backup button
+
+The registrations admin page includes a `Backup الآن` button that creates an immediate Google Drive backup using `/api/admin/backup-now`.

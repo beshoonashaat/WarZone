@@ -19,7 +19,7 @@
   "crons": [
     {
       "path": "/api/admin/backup-hourly",
-      "schedule": "0 * * * *"
+      "schedule": "0 1 * * *"
     }
   ]
 }

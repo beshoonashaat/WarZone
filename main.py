@@ -57,6 +57,29 @@ def hourly_drive_backup(request: Request):
     return {"status": "success", "message": "Backup created", "backup_id": backup_id, "created_at": snapshot["created_at"]}
 
 
+@app.post("/api/admin/backup-now")
+def manual_drive_backup(request: Request):
+    # Manual admin backup from dashboard. Uses admin password instead of cron secret.
+    supplied = request.headers.get("x-admin-password") or request.query_params.get("p") or request.query_params.get("password")
+    admin_password = os.getenv("REGISTRATION_ADMIN_PASSWORD", "BeshooWarZone")
+    if supplied != admin_password:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not drive_store.enabled():
+        raise HTTPException(status_code=400, detail="Google Drive storage is not configured.")
+    snapshot = {
+        "created_at": datetime.now().isoformat(),
+        "type": "manual",
+        "warzone_main": load_data(),
+        "registrations": registration_data_module.load_data(),
+        "whatsapp_groups": registration_data_module.load_whatsapp_groups(),
+    }
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_id = drive_store.save_backup(f"warzone_manual_backup_{stamp}.json", snapshot)
+    if not backup_id:
+        raise HTTPException(status_code=500, detail="Failed to create Google Drive backup.")
+    return {"status": "success", "message": "تم عمل Backup على Google Drive ✅", "backup_id": backup_id, "created_at": snapshot["created_at"]}
+
+
 # =========================
 # ثابت الألعاب والملفات
 # =========================

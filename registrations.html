@@ -24,7 +24,7 @@
   <section id="app" style="display:none">
     <div class="header">
       <div><h1>إدارة تسجيلات الفرق</h1><p class="muted">عرض، تعديل، حذف، وإخراج Excel.</p></div>
-      <div class="actions"><a class="btn green" href="/register" target="_blank">+ تسجيل فريق جديد</a><a class="btn secondary" href="/whatsapp-groups">جروبات الواتساب</a><button class="yellow" onclick="exportExcel()">Export Excel</button><button class="secondary" onclick="logout()">خروج</button></div>
+      <div class="actions"><a class="btn green" href="/register" target="_blank">+ تسجيل فريق جديد</a><a class="btn secondary" href="/whatsapp-groups">جروبات الواتساب</a><button class="yellow" onclick="exportExcel()">Export Excel</button><button class="green" onclick="backupNow()">Backup الآن</button><button class="secondary" onclick="logout()">خروج</button></div>
     </div>
 
     <div class="stats">
@@ -185,6 +185,11 @@ async function importWhatsAppLinks(){
     fileInput.value='';
     await loadTeams();
   }catch(e){status('whatsappStatus',e.message,false)}
+}
+
+async function backupNow(){
+  if(!confirm('عمل Backup الآن على Google Drive؟'))return;
+  try{const result=await api('/api/admin/backup-now',{method:'POST'});status('mainStatus',result.message || 'تم عمل Backup ✅',true)}catch(e){status('mainStatus',e.message,false)}
 }
 
 function exportExcel(){window.location='/api/registrations/export?p='+encodeURIComponent(PASS)}
