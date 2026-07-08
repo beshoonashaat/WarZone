@@ -13,10 +13,10 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from starlette.datastructures import UploadFile as StarletteUploadFile
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
 APP_DIR = Path(__file__).resolve().parent
@@ -104,6 +104,110 @@ def normalize_birthdate(value: Any) -> str:
         except Exception:
             pass
     raise ValueError("invalid date")
+
+
+def clean_excel_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d")
+    text = str(value).strip()
+    if text.endswith(".0") and re.fullmatch(r"\d+\.0", text):
+        text = text[:-2]
+    return text
+
+
+def excel_gender(value: Any) -> str:
+    raw = clean_excel_value(value).strip().lower()
+    if raw in {"m", "male", "boy", "ذكر", "ولد", "راجل"}:
+        return "ذكر"
+    if raw in {"f", "female", "girl", "أنثى", "انثى", "بنت", "ست"}:
+        return "أنثى"
+    return clean_excel_value(value).strip()
+
+
+def excel_header_key(value: Any) -> str:
+    value = clean_excel_value(value).strip().lower()
+    value = value.replace(" ", "_").replace("-", "_")
+    return re.sub(r"_+", "_", value)
+
+
+EXCEL_PLAYER_COLUMN_ALIASES = {
+    "name": {"name", "player_name", "الاسم", "اسم", "اسم_اللاعب", "player"},
+    "age": {"age", "السن", "سن", "العمر"},
+    "birthdate": {"birthdate", "birth_date", "date_of_birth", "dob", "تاريخ_الميلاد", "ميلاد"},
+    "national_id": {"national_id", "nationalid", "id", "رقم_قومي", "الرقم_القومي", "بطاقة", "national_id_number"},
+    "university": {"university", "جامعة", "الجامعة"},
+    "college": {"college", "كلية", "الكلية"},
+    "gender": {"gender", "النوع", "الجنس", "ذكر_انثى", "ذكر/انثى"},
+}
+
+
+def parse_registration_excel(content: bytes, fallback_team_name: str = "") -> Dict[str, Any]:
+    try:
+        wb = load_workbook(BytesIO(content), data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ملف الإكسيل غير صالح أو غير قابل للقراءة.")
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(status_code=400, detail="ملف الإكسيل فارغ.")
+
+    team_name = fallback_team_name.strip()
+    header_row_idx = None
+    col_map: Dict[str, int] = {}
+
+    # Optional metadata rows like: team_name | اسم الفريق
+    for r_idx, row in enumerate(rows[:8]):
+        cells = [clean_excel_value(c) for c in row]
+        for c_idx, cell in enumerate(cells):
+            key = excel_header_key(cell)
+            if key in {"team_name", "team", "اسم_الفريق", "اسم_المنتخب", "المنتخب"}:
+                if c_idx + 1 < len(cells) and cells[c_idx + 1].strip():
+                    team_name = cells[c_idx + 1].strip()
+
+    for r_idx, row in enumerate(rows[:15]):
+        normalized = [excel_header_key(c) for c in row]
+        temp: Dict[str, int] = {}
+        for c_idx, key in enumerate(normalized):
+            for field, aliases in EXCEL_PLAYER_COLUMN_ALIASES.items():
+                if key in aliases and field not in temp:
+                    temp[field] = c_idx
+        if {"name", "age", "birthdate", "national_id", "university", "college", "gender"}.issubset(temp):
+            header_row_idx = r_idx
+            col_map = temp
+            break
+
+    if header_row_idx is None:
+        raise HTTPException(
+            status_code=400,
+            detail="لازم ملف الإكسيل يحتوي أعمدة: name, age, birthdate, national_id, university, college, gender أو أسماءها بالعربي.",
+        )
+
+    players: List[Dict[str, Any]] = []
+    for row in rows[header_row_idx + 1:]:
+        if not row or not clean_excel_value(row[col_map["name"]] if col_map["name"] < len(row) else ""):
+            continue
+        def cell(field: str) -> str:
+            idx = col_map[field]
+            return clean_excel_value(row[idx] if idx < len(row) else "")
+        players.append({
+            "id": uuid.uuid4().hex,
+            "name": cell("name"),
+            "age": to_english_digits(cell("age")),
+            "birthdate": to_english_digits(cell("birthdate")),
+            "national_id": to_english_digits(cell("national_id")),
+            "university": cell("university"),
+            "college": cell("college"),
+            "gender": excel_gender(cell("gender")),
+            "files": {},
+        })
+
+    if not team_name:
+        raise HTTPException(status_code=400, detail="اكتب اسم الفريق أو ضعه في الإكسيل كـ team_name / اسم الفريق.")
+    if not players:
+        raise HTTPException(status_code=400, detail="لم يتم العثور على لاعبين في ملف الإكسيل.")
+    return {"team_name": team_name, "players": players}
 
 
 def now_iso() -> str:
@@ -545,6 +649,62 @@ async def register_team(request: Request):
         "status": "success",
         "team_id": team["id"],
         "team_name": team["team_name"],
+        "whatsapp_group": {
+            "slot": whatsapp_group.get("slot"),
+            "name": whatsapp_group.get("name"),
+            "link": whatsapp_group.get("link"),
+        },
+    }
+
+
+@router.post("/api/registrations/import-excel")
+async def import_registration_excel(request: Request, team_name: str = Form(""), file: UploadFile = File(...)):
+    require_admin(request)
+    if not file.filename.lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="ارفع ملف Excel بصيغة .xlsx أو .xlsm")
+
+    data = load_data()
+    if len(data.get("teams", [])) >= MAX_TEAMS:
+        raise HTTPException(status_code=400, detail=f"تم اكتمال عدد الفرق المسموح به: {MAX_TEAMS} فريق.")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="ملف الإكسيل فارغ.")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail=f"حجم الملف أكبر من {MAX_UPLOAD_MB}MB.")
+
+    parsed = parse_registration_excel(content, team_name or Path(file.filename).stem)
+    parsed_team_name = parsed["team_name"]
+    players = parsed["players"]
+
+    ensure_team_name_unique(data, parsed_team_name)
+    validate_players(players)
+
+    existing_ids = {p.get("national_id") for t in data.get("teams", []) for p in t.get("players", [])}
+    for p in players:
+        if p.get("national_id") in existing_ids:
+            raise HTTPException(status_code=409, detail=f"الرقم القومي {p.get('national_id')} مسجل قبل كده في فريق آخر.")
+
+    team = {
+        "id": uuid.uuid4().hex,
+        "team_name": parsed_team_name,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "players": players,
+        "source": "excel_import",
+        "source_filename": file.filename,
+    }
+
+    whatsapp_group = assign_whatsapp_group(team["id"])
+    team["whatsapp_group_slot"] = whatsapp_group.get("slot")
+    data["teams"].append(team)
+    save_data(data)
+    return {
+        "status": "success",
+        "message": "تم استيراد الفريق من الإكسيل ✅",
+        "team_id": team["id"],
+        "team_name": team["team_name"],
+        "players_count": len(players),
         "whatsapp_group": {
             "slot": whatsapp_group.get("slot"),
             "name": whatsapp_group.get("name"),
