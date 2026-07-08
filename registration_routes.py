@@ -560,6 +560,110 @@ async def save_whatsapp_groups_api(request: Request):
     return {"status": "success", "groups": final}
 
 
+@router.get("/api/whatsapp-groups/export")
+def export_whatsapp_groups_excel(request: Request):
+    require_admin(request)
+    data = load_data()
+    teams_by_id = {t.get("id"): t.get("team_name") for t in data.get("teams", [])}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "WhatsApp Links"
+    headers = ["slot", "name", "link", "assigned_team_name"]
+    ws.append(headers)
+    for g in load_whatsapp_groups().get("groups", []):
+        ws.append([
+            g.get("slot"),
+            g.get("name") or f"جروب واتساب {g.get('slot')}",
+            g.get("link") or "",
+            teams_by_id.get(g.get("team_id"), ""),
+        ])
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="059669")
+        cell.alignment = Alignment(horizontal="center")
+    for col, width in zip(["A", "B", "C", "D"], [10, 28, 55, 28]):
+        ws.column_dimensions[col].width = width
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=warzone_whatsapp_links.xlsx"},
+    )
+
+
+def whatsapp_excel_key(value: Any) -> str:
+    return re.sub(r"_+", "_", clean_excel_value(value).strip().lower().replace(" ", "_").replace("-", "_"))
+
+
+@router.post("/api/whatsapp-groups/import")
+async def import_whatsapp_groups_excel(request: Request, file: UploadFile = File(...)):
+    require_admin(request)
+    if not file.filename.lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="ارفع ملف Excel بصيغة .xlsx أو .xlsm")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="ملف الإكسيل فارغ.")
+    try:
+        wb = load_workbook(BytesIO(content), data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ملف الإكسيل غير صالح.")
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(status_code=400, detail="ملف الإكسيل فارغ.")
+
+    header_idx = None
+    col_map = {}
+    aliases = {
+        "slot": {"slot", "رقم", "رقم_الجروب", "group_number", "group_no"},
+        "name": {"name", "اسم", "اسم_الجروب", "group_name"},
+        "link": {"link", "لينك", "رابط", "رابط_الجروب", "whatsapp_link", "واتساب"},
+    }
+    for r_idx, row in enumerate(rows[:10]):
+        temp = {}
+        for c_idx, cell in enumerate(row):
+            key = whatsapp_excel_key(cell)
+            for field, names in aliases.items():
+                if key in names and field not in temp:
+                    temp[field] = c_idx
+        if "slot" in temp and "link" in temp:
+            header_idx = r_idx
+            col_map = temp
+            break
+    if header_idx is None:
+        raise HTTPException(status_code=400, detail="لازم الملف يحتوي أعمدة slot و link أو رقم الجروب و رابط الجروب.")
+
+    existing = load_whatsapp_groups()
+    existing_by_slot = {int(g.get("slot")): g for g in existing.get("groups", [])}
+    updates = 0
+    for row in rows[header_idx + 1:]:
+        try:
+            slot = int(float(clean_excel_value(row[col_map["slot"]] if col_map["slot"] < len(row) else "")))
+        except Exception:
+            continue
+        if not (1 <= slot <= MAX_TEAMS):
+            continue
+        link = clean_excel_value(row[col_map["link"]] if col_map["link"] < len(row) else "").strip()
+        name = clean_excel_value(row[col_map.get("name", -1)] if col_map.get("name", -1) >= 0 and col_map.get("name", -1) < len(row) else "").strip()
+        if link and not re.match(r"^https?://", link):
+            raise HTTPException(status_code=400, detail=f"لينك الجروب رقم {slot} لازم يبدأ بـ http أو https.")
+        old = existing_by_slot.get(slot, {"slot": slot, "name": f"جروب واتساب {slot}", "link": "", "team_id": None})
+        old["link"] = link
+        if name:
+            old["name"] = name
+        existing_by_slot[slot] = old
+        updates += 1
+
+    final = []
+    for i in range(1, MAX_TEAMS + 1):
+        old = existing_by_slot.get(i, {"slot": i, "name": f"جروب واتساب {i}", "link": "", "team_id": None})
+        final.append({"slot": i, "name": old.get("name") or f"جروب واتساب {i}", "link": old.get("link") or "", "team_id": old.get("team_id") or None})
+    save_whatsapp_groups({"groups": final})
+    return {"status": "success", "message": f"تم تحديث {updates} لينك واتساب ✅", "groups": final, "updated": updates}
+
+
 @router.get("/api/team-name-available")
 def team_name_available(name: str):
     data = load_data()

@@ -47,6 +47,19 @@
         <div id="excelStatus" style="margin-top:10px"></div>
         <div id="excelPreview" style="display:none;margin-top:14px" class="table-wrap"></div>
       </div>
+
+      <div class="card" style="margin-bottom:18px">
+        <h2 style="margin-top:0;color:var(--cyan)">لينكات جروبات الواتساب</h2>
+        <p style="color:var(--muted);line-height:1.8;margin-top:0">حمّل ملف اللينكات الحالي، عدّل أعمدة slot / name / link، وارفعه تاني لتحديث الجروبات.</p>
+        <div class="grid">
+          <input id="whatsappFile" type="file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          <div class="actions">
+            <a class="btn secondary" href="/api/whatsapp-groups/export?p=" onclick="this.href='/api/whatsapp-groups/export?p='+encodeURIComponent(PASS)">تحميل لينكات الواتساب</a>
+            <button class="green" onclick="importWhatsAppLinks()">رفع لينكات الواتساب ✅</button>
+          </div>
+        </div>
+        <div id="whatsappStatus" style="margin-top:10px"></div>
+      </div>
       <div class="table-wrap"><table><thead><tr><th>اسم المنتخب</th><th>عدد الأفراد</th><th>ذكور</th><th>إناث</th><th>جروب واتساب</th><th>آخر تعديل</th><th>تحكم</th></tr></thead><tbody id="teamsBody"></tbody></table></div>
       <div id="mainStatus" class="status"></div>
     </div>
@@ -160,6 +173,18 @@ async function confirmExcelTeam(){
     document.getElementById('excelFile').value=''; document.getElementById('excelTeamName').value='';
     await loadTeams();
   }catch(e){status('excelStatus',e.message,false)}
+}
+
+async function importWhatsAppLinks(){
+  const fileInput=document.getElementById('whatsappFile');
+  if(!fileInput.files || !fileInput.files[0]){status('whatsappStatus','اختار ملف Excel فيه لينكات الواتساب الأول.',false);return;}
+  const fd=new FormData(); fd.append('file', fileInput.files[0]);
+  try{
+    const result=await api('/api/whatsapp-groups/import',{method:'POST',body:fd});
+    status('whatsappStatus',result.message || 'تم تحديث لينكات الواتساب ✅',true);
+    fileInput.value='';
+    await loadTeams();
+  }catch(e){status('whatsappStatus',e.message,false)}
 }
 
 function exportExcel(){window.location='/api/registrations/export?p='+encodeURIComponent(PASS)}
