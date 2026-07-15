@@ -35,8 +35,8 @@ app.add_middleware(
 
 
 
-@app.get("/api/admin/backup-hourly")
-def hourly_drive_backup(request: Request):
+@app.get("/api/admin/backup-daily")
+def daily_drive_backup(request: Request):
     secret = os.getenv("CRON_SECRET", "").strip()
     supplied = request.headers.get("x-cron-secret") or request.query_params.get("secret") or request.headers.get("authorization", "").replace("Bearer ", "")
     # Vercel Cron may call without custom headers; allow if no CRON_SECRET is configured, but setting it is recommended.
@@ -57,9 +57,13 @@ def hourly_drive_backup(request: Request):
     return {"status": "success", "message": "Backup created", "backup_id": backup_id, "created_at": snapshot["created_at"]}
 
 
+@app.get("/api/admin/backup-hourly")
+def hourly_drive_backup_alias(request: Request):
+    return daily_drive_backup(request)
+
+
 @app.post("/api/admin/backup-now")
 def manual_drive_backup(request: Request):
-    # Manual admin backup from dashboard. Uses admin password instead of cron secret.
     supplied = request.headers.get("x-admin-password") or request.query_params.get("p") or request.query_params.get("password")
     admin_password = os.getenv("REGISTRATION_ADMIN_PASSWORD", "BeshooWarZone")
     if supplied != admin_password:
@@ -1226,11 +1230,6 @@ async def serve_draw_settings():
     return FileResponse("draw_settings.html")
 
 
-
-
-@app.get("/teams")
-def teams_page():
-    return FileResponse("teams.html")
 
 @app.get("/sw.js")
 async def serve_sw():

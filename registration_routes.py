@@ -37,12 +37,6 @@ router = APIRouter()
 
 
 # ----- HTML pages for the registration addon -----
-@router.get("/register", include_in_schema=False)
-def serve_register_page():
-    page = APP_DIR / "register.html"
-    if not page.exists():
-        raise HTTPException(status_code=404, detail="register.html غير موجود بجانب main.py")
-    return FileResponse(page)
 
 
 @router.get("/registrations", include_in_schema=False)
@@ -61,9 +55,6 @@ def serve_whatsapp_groups_page():
     return FileResponse(page)
 
 
-@router.get("/register.html", include_in_schema=False)
-def serve_register_html_alias():
-    return serve_register_page()
 
 
 @router.get("/registrations.html", include_in_schema=False)
@@ -664,151 +655,8 @@ async def import_whatsapp_groups_excel(request: Request, file: UploadFile = File
     return {"status": "success", "message": f"تم تحديث {updates} لينك واتساب ✅", "groups": final, "updated": updates}
 
 
-@router.get("/api/team-name-available")
-def team_name_available(name: str):
-    data = load_data()
-    normalized = normalize_team_name(name)
-    if not normalized:
-        return {"available": False, "message": "اكتب اسم المنتخب"}
-    for team in data.get("teams", []):
-        if normalize_team_name(team.get("team_name", "")) == normalized:
-            return {"available": False, "message": "الاسم مستخدم قبل كده"}
-    return {"available": True, "message": "الاسم متاح"}
-
-@router.post("/api/register-team-json")
-async def register_team_json(request: Request):
-    data = load_data()
-    if len(data.get("teams", [])) >= MAX_TEAMS:
-        raise HTTPException(status_code=400, detail=f"تم اكتمال عدد الفرق المسموح به: {MAX_TEAMS} فريق.")
-
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="صيغة بيانات التسجيل غير صحيحة.")
-
-    team_name = str(payload.get("team_name", "")).strip()
-    players_raw = payload.get("players", [])
-
-    if not isinstance(players_raw, list):
-        raise HTTPException(status_code=400, detail="بيانات اللاعبين لازم تكون قائمة.")
-
-    # فحص توفر اسم الفريق
-    ensure_team_name_unique(data, team_name)
-
-    # تجميع بيانات اللاعبين
-    players = []
-    for idx, raw in enumerate(players_raw):
-        player = {
-            "id": uuid.uuid4().hex,
-            "name": str(raw.get("name", "")).strip(),
-            "age": to_english_digits(raw.get("age", "")),
-            "birthdate": to_english_digits(raw.get("birthdate", "")),
-            "national_id": to_english_digits(raw.get("national_id", "")),
-            "university": str(raw.get("university", "")).strip(),
-            "college": str(raw.get("college", "")).strip(),
-            "gender": str(raw.get("gender", "")).strip(),
-            "files": {} # لا يوجد صور في هذا الإصدار من الواجهة
-        }
-        players.append(player)
-
-    # التحقق من صحة البيانات (العدد، الرقم القومي، الذكور/الإناث)
-    validate_players(players)
-
-    # التحقق من عدم تكرار الرقم القومي في فرق أخرى
-    existing_ids = {p.get("national_id") for t in data.get("teams", []) for p in t.get("players", [])}
-    for p in players:
-        if p.get("national_id") in existing_ids:
-            raise HTTPException(status_code=409, detail=f"الرقم القومي {p.get('national_id')} مسجل قبل كده في فريق آخر.")
-
-    team_id = uuid.uuid4().hex
-    team = {
-        "id": team_id,
-        "team_name": team_name,
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
-        "players": players,
-    }
-
-    # تخصيص جروب الواتساب
-    try:
-        whatsapp_group = assign_whatsapp_group(team["id"])
-    except Exception:
-        raise
-
-    team["whatsapp_group_slot"] = whatsapp_group.get("slot")
-    data["teams"].append(team)
-    
-    # حفظ البيانات
-    save_data(data)
-
-    return {
-        "status": "success",
-        "team_id": team["id"],
-        "team_name": team["team_name"],
-        "whatsapp_group": {
-            "slot": whatsapp_group.get("slot"),
-            "name": whatsapp_group.get("name"),
-            "link": whatsapp_group.get("link"),
-        },
-    }
-@router.post("/api/register-team")
-async def register_team(request: Request):
-    data = load_data()
-    if len(data.get("teams", [])) >= MAX_TEAMS:
-        raise HTTPException(status_code=400, detail=f"تم اكتمال عدد الفرق المسموح به: {MAX_TEAMS} فريق.")
-
-    team = await build_team_from_form(request)
-    ensure_team_name_unique(data, team["team_name"])
-
-    # Check national ID uniqueness across teams.
-    existing_ids = {p.get("national_id") for t in data.get("teams", []) for p in t.get("players", [])}
-    for p in team["players"]:
-        if p.get("national_id") in existing_ids:
-            delete_team_files(team["id"])
-            raise HTTPException(status_code=409, detail=f"الرقم القومي {p.get('national_id')} مسجل قبل كده في فريق آخر.")
-
-    try:
-        whatsapp_group = assign_whatsapp_group(team["id"])
-    except Exception:
-        delete_team_files(team["id"])
-        raise
-
-    team["whatsapp_group_slot"] = whatsapp_group.get("slot")
-    data["teams"].append(team)
-    save_data(data)
-    return {
-        "status": "success",
-        "team_id": team["id"],
-        "team_name": team["team_name"],
-        "whatsapp_group": {
-            "slot": whatsapp_group.get("slot"),
-            "name": whatsapp_group.get("name"),
-            "link": whatsapp_group.get("link"),
-        },
-    }
 
 
-@router.get("/api/public-teams")
-def public_teams(request: Request):
-    data = load_data()
-    teams = []
-    for team in data.get("teams", []):
-        players = []
-        for player in team.get("players", []):
-            files = player.get("files", {}) or {}
-            photo_url = ""
-            if files.get("photo"):
-                photo_url = str(request.base_url).rstrip("/") + f"/api/public-registration-photo/{team.get('id')}/{player.get('id')}"
-            players.append({
-                "id": player.get("id"),
-                "name": player.get("name"),
-                "university": player.get("university"),
-                "college": player.get("college"),
-                "gender": player.get("gender"),
-                "photo_url": photo_url,
-            })
-        teams.append({"id": team.get("id"), "team_name": team.get("team_name"), "players_count": len(players), "players": players})
-    return {"teams": teams, "count": len(teams)}
 
 
 def file_response_from_ref(rel: str, fallback_name: str = "file"):
@@ -822,19 +670,6 @@ def file_response_from_ref(rel: str, fallback_name: str = "file"):
         raise HTTPException(status_code=404, detail="الملف غير موجود على السيرفر.")
     return FileResponse(path)
 
-
-@router.get("/api/public-registration-photo/{team_id}/{player_id}")
-def get_public_registration_photo(team_id: str, player_id: str):
-    data = load_data()
-    for team in data.get("teams", []):
-        if team.get("id") == team_id:
-            for player in team.get("players", []):
-                if player.get("id") == player_id:
-                    rel = (player.get("files") or {}).get("photo")
-                    if not rel:
-                        raise HTTPException(status_code=404, detail="الصورة غير موجودة.")
-                    return file_response_from_ref(rel, "photo.jpg")
-    raise HTTPException(status_code=404, detail="الصورة غير موجودة.")
 
 
 @router.get("/api/registrations/excel-template")
