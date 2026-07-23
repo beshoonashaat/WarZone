@@ -54,18 +54,18 @@ file_...                             # uploaded player photos/cards
 
 If the Drive variables are missing, the app falls back to `/tmp`, which is temporary on Vercel.
 
-## Hourly Google Drive backups
+## Daily Google Drive backups
 
 Vercel Cron is configured in `vercel.json` to call:
 
 ```txt
-/api/admin/backup-hourly
+/api/admin/backup-daily
 ```
 
-once daily on Hobby plan using:
+every hour using:
 
 ```txt
-0 1 * * *
+0 * * * *
 ```
 
 Backups are saved in a Google Drive folder named:
@@ -82,6 +82,6 @@ CRON_SECRET=<any-long-random-secret>
 
 Note: Vercel Cron cannot send this custom secret by default unless you call the endpoint yourself with `?secret=...`. If `CRON_SECRET` is not set, the cron endpoint is open but only creates backups.
 
-## Manual backup button
+## Registration page removed
 
-The registrations admin page includes a `Backup الآن` button that creates an immediate Google Drive backup using `/api/admin/backup-now`.
+Public `/register` and `/register.html` are disabled. Teams are added only by admins from `/registrations` using the Excel preview/import flow.
